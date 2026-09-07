@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "id": "zen.nightmode",
-  "name": "Keep Awake",
-  "version": "1.0.1",
+  "id": "zen.awake",
+  "name": "Zen Awake",
+  "version": "1.1.0",
   "author": "zen",
   "description": "Keeps the machine awake with the lid closed while you listen to a video",
   "kinds": [
@@ -12,7 +12,7 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Keep Awake",
+    "displayName": "Zen Awake",
     "description": "Keep the machine awake with the lid closed for a chosen duration",
     "category": "System",
     "allowMultiple": false,
@@ -47,7 +47,7 @@
         "type": "boolean",
         "label": "Show remaining time",
         "defaultValue": true,
-        "description": "Shows the countdown next to the icon while Keep Awake is active."
+        "description": "Shows the countdown next to the icon while Zen Awake is active."
       },
       {
         "key": "suspendAtEnd",

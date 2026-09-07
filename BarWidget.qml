@@ -7,7 +7,7 @@ import qs.Ui
 // closed, long enough to listen to a video while falling asleep.
 BarWidget {
   id: root
-  moduleName: "zen.nightmode"
+  moduleName: "zen.awake"
 
   // The script lives inside the plugin rather than elsewhere on PATH, so the
   // button and command cannot drift apart and renaming the folder is safe.
@@ -98,9 +98,9 @@ BarWidget {
     active: root.armed
     dimmed: !root.armed
     tooltipText: (root.armed
-      ? "Keep Awake - " + root.humanLeft(root.remaining) + " remaining"
+      ? "Zen Awake - " + root.humanLeft(root.remaining) + " remaining"
         + " - lid " + (root.lid === "closed" ? "closed" : "open")
-      : "Keep Awake - off")
+      : "Zen Awake - off")
       + "\nLeft click: toggle " + root.duration
       + " - Right click: add " + root.stepMinutes + " min"
 

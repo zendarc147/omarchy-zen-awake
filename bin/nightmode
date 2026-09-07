@@ -39,7 +39,7 @@ ensure_state_dir() {
   mkdir -p "$STATE_DIR"
 }
 
-notify() { notify-send -u low "󰤄  Keep Awake" "$1" >/dev/null 2>&1 || true; }
+notify() { notify-send -u low "󰤄  Zen Awake" "$1" >/dev/null 2>&1 || true; }
 
 lid_closed() {
   [[ -r $LID_STATE ]] || return 1
@@ -115,7 +115,7 @@ status() {
   fi
 }
 
-# One line of JSON for the Omarchy bar widget (zen.nightmode).
+# One line of JSON for the Omarchy bar widget (zen.awake).
 state() {
   local end left lid
   lid=$(lid_closed && echo closed || echo open)
@@ -190,7 +190,7 @@ start() {
 
   setsid systemd-inhibit \
     --what=handle-lid-switch \
-    --who="nightmode" \
+    --who="zen-awake" \
     --why="Media playback with the lid closed" \
     --mode=block \
     -- "$(realpath "$0")" "${watch_args[@]}" >/dev/null 2>&1 &
@@ -203,7 +203,7 @@ start() {
     sleep 0.05
   done
 
-  printf 'Keep Awake active for %s: you can close the lid and audio will continue.\n' \
+  printf 'Zen Awake active for %s: you can close the lid and audio will continue.\n' \
     "$(human_left "$secs")"
   notify "Active for $(human_left "$secs"). You can close the lid."
 }
@@ -213,9 +213,9 @@ turn_off() {
     stop
     hyprctl dispatch dpms on >/dev/null 2>&1
     notify "Turned off. Closing the lid will suspend the machine."
-    echo "Keep Awake turned off"
+    echo "Zen Awake turned off"
   else
-    echo "Keep Awake is already off"
+    echo "Zen Awake is already off"
   fi
 }
 
@@ -231,7 +231,7 @@ extend() {
   fi
 
   if ! running_pid >/dev/null; then
-    ((sign > 0)) || { echo "Keep Awake is off"; return 1; }
+    ((sign > 0)) || { echo "Zen Awake is off"; return 1; }
     start "$secs"
     return 0
   fi

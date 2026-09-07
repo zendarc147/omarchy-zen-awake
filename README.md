@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="Keep Awake for Omarchy" width="100%">
+  <img src="assets/banner.svg" alt="Zen Awake for Omarchy" width="100%">
 </p>
 
 <p align="center">
@@ -8,13 +8,13 @@
   <img src="https://img.shields.io/badge/license-MIT-8b91a1?style=flat-square" alt="MIT license">
 </p>
 
-Keep your laptop awake with the lid closed for a limited time. The screen turns
+Zen Awake keeps your laptop awake with the lid closed for a limited time. The screen turns
 off, audio keeps playing, and normal lid behavior returns when the timer ends.
 
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/zendarc147/omarchy-keep-awake.git --enable --yes
+omarchy plugin add https://github.com/zendarc147/omarchy-zen-awake.git --enable --yes
 ```
 
 ## Controls
@@ -33,7 +33,7 @@ Omarchy.
 ## Remove
 
 ```bash
-omarchy plugin remove zen.nightmode --yes
+omarchy plugin remove zen.awake --yes
 ```
 
 Built for Omarchy Quattro. No external dependencies.
