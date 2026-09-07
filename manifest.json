@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "id": "zen.nightmode",
+  "name": "Keep Awake",
+  "version": "1.0.1",
+  "author": "zen",
+  "description": "Keeps the machine awake with the lid closed while you listen to a video",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Keep Awake",
+    "description": "Keep the machine awake with the lid closed for a chosen duration",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "center",
+    "defaults": {
+      "duration": "2h",
+      "stepMinutes": 30,
+      "showRemaining": true,
+      "suspendAtEnd": true
+    },
+    "schema": [
+      {
+        "key": "duration",
+        "type": "enum",
+        "label": "Default duration",
+        "options": ["30m", "1h", "1h30", "2h", "3h", "4h", "8h"],
+        "defaultValue": "2h",
+        "description": "Duration toggled by left-clicking the icon."
+      },
+      {
+        "key": "stepMinutes",
+        "type": "integer",
+        "label": "Adjustment step (minutes)",
+        "min": 5,
+        "max": 60,
+        "step": 5,
+        "defaultValue": 30,
+        "description": "How many minutes a right click adds, or the mouse wheel adds or removes."
+      },
+      {
+        "key": "showRemaining",
+        "type": "boolean",
+        "label": "Show remaining time",
+        "defaultValue": true,
+        "description": "Shows the countdown next to the icon while Keep Awake is active."
+      },
+      {
+        "key": "suspendAtEnd",
+        "type": "boolean",
+        "label": "Suspend when finished",
+        "defaultValue": true,
+        "description": "Suspend the machine when the timer ends if the lid is still closed."
+      }
+    ]
+  }
+}

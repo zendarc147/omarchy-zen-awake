@@ -1,0 +1,308 @@
+#!/bin/bash
+# nightmode - watch or listen to a video while falling asleep with the lid closed.
+#
+# Blocks lid-triggered suspension (logind), turns off the display when the lid
+# closes, turns it back on when the lid opens, and restores normal behavior when
+# the timer ends. If the lid is still closed, it suspends the machine to avoid
+# draining the battery all night.
+#
+# Usage:
+#   nightmode                 start for 2h (default)
+#   nightmode 90              start for 90 minutes
+#   nightmode 45m | 3h | 1h30
+#   nightmode toggle [duration]  start if inactive, otherwise stop
+#   nightmode extend +30m     extend the timer (-15m to shorten it)
+#   nightmode off             stop immediately and return control to logind
+#   nightmode status          current state, human-readable
+#   nightmode state           current state as JSON (for the bar widget)
+#
+# Options:
+#   --no-suspend   do not suspend when the timer ends, even if the lid is closed
+#
+# Running `nightmode` again while active restarts the timer from zero.
+
+set -uo pipefail
+
+RUNTIME_BASE="${XDG_RUNTIME_DIR:-/run/user/$UID}"
+STATE_DIR="$RUNTIME_BASE/nightmode"
+PID_FILE="$STATE_DIR/pid"
+END_FILE="$STATE_DIR/end"
+LID_STATE=$(echo /proc/acpi/button/lid/*/state)
+POLL=5
+
+ensure_state_dir() {
+  umask 077
+  [[ -d $RUNTIME_BASE && -w $RUNTIME_BASE ]] || {
+    echo "runtime directory is unavailable: $RUNTIME_BASE" >&2
+    exit 1
+  }
+  mkdir -p "$STATE_DIR"
+}
+
+notify() { notify-send -u low "󰤄  Keep Awake" "$1" >/dev/null 2>&1 || true; }
+
+lid_closed() {
+  [[ -r $LID_STATE ]] || return 1
+  [[ $(awk '{print $NF}' "$LID_STATE") == "closed" ]]
+}
+
+# The PID is published by the watch loop itself: setsid and systemd-inhibit sit
+# between us and that loop, so $! does not refer to it.
+running_pid() {
+  local pid
+  [[ -r $PID_FILE ]] || return 1
+  pid=$(<"$PID_FILE")
+  [[ -n $pid ]] && kill -0 "$pid" 2>/dev/null || return 1
+  echo "$pid"
+}
+
+read_end() {
+  local end
+  end=$(cat "$END_FILE" 2>/dev/null) || return 1
+  [[ $end =~ ^[0-9]+$ ]] || return 1
+  echo "$end"
+}
+
+# "2h" / "90m" / "45min" / "30s" / "1h30" / "90" (minutes by default) -> seconds
+parse_duration() {
+  local in=${1,,} total=0 matched=0 n
+  [[ $in =~ ^[0-9]+$ ]] && { echo $((in * 60)); return 0; }
+  while [[ $in =~ ^([0-9]+)(h|min|m|s)(.*)$ ]]; do
+    n=${BASH_REMATCH[1]}
+    case ${BASH_REMATCH[2]} in
+      h) ((total += n * 3600)) ;;
+      min | m) ((total += n * 60)) ;;
+      s) ((total += n)) ;;
+    esac
+    in=${BASH_REMATCH[3]}
+    matched=1
+  done
+  # "1h30" -> the remaining 30 is interpreted as minutes
+  [[ $matched == 1 && $in =~ ^[0-9]+$ ]] && { ((total += in * 60)); in=""; }
+  [[ $matched == 1 && -z $in ]] || return 1
+  echo "$total"
+}
+
+human_left() {
+  printf '%dh%02dm' $(($1 / 3600)) $(($1 % 3600 / 60))
+}
+
+stop() {
+  local pid
+  if pid=$(running_pid); then
+    kill -TERM "$pid" 2>/dev/null
+    # Let the loop turn the display back on and release the inhibitor.
+    for _ in {1..40}; do
+      running_pid >/dev/null || break
+      sleep 0.05
+    done
+  fi
+  rm -f "$PID_FILE" "$END_FILE"
+}
+
+status() {
+  local pid end left
+  if pid=$(running_pid); then
+    end=$(read_end) || end=0
+    left=$((end - $(date +%s)))
+    ((left < 0)) && left=0
+    printf 'active (pid %s) - %s remaining - lid: %s\n' \
+      "$pid" "$(human_left "$left")" \
+      "$(lid_closed && echo closed || echo open)"
+  else
+    echo "inactive"
+    return 1
+  fi
+}
+
+# One line of JSON for the Omarchy bar widget (zen.nightmode).
+state() {
+  local end left lid
+  lid=$(lid_closed && echo closed || echo open)
+  if running_pid >/dev/null; then
+    end=$(read_end) || end=0
+    left=$((end - $(date +%s)))
+    ((left < 0)) && left=0
+    printf '{"active":true,"remaining":%d,"end":%d,"lid":"%s"}\n' "$left" "$end" "$lid"
+  else
+    printf '{"active":false,"remaining":0,"end":0,"lid":"%s"}\n' "$lid"
+  fi
+}
+
+# Internal loop launched under systemd-inhibit: watch the lid, then finish.
+# The deadline is reread each cycle so `extend` can move it while running.
+watch_loop() {
+  local suspend_at_end=$1 last="" end now nap_pid=""
+
+  cleanup() {
+    [[ -n $nap_pid ]] && kill "$nap_pid" 2>/dev/null
+    [[ $last == closed ]] && hyprctl dispatch dpms on >/dev/null 2>&1
+    rm -f "$PID_FILE" "$END_FILE"
+    exit 0
+  }
+  trap cleanup TERM INT
+
+  echo "$$" >"$PID_FILE"
+
+  while :; do
+    end=$(read_end) || break
+    (($(date +%s) < end)) || break
+
+    now=$(lid_closed && echo closed || echo open)
+    if [[ $now != "$last" ]]; then
+      case $now in
+        closed) hyprctl dispatch dpms off >/dev/null 2>&1 ;;
+        open) omarchy-system-wake >/dev/null 2>&1 ;;
+      esac
+      last=$now
+    fi
+
+    # Background `sleep` plus `wait`: otherwise bash would hold the TERM signal
+    # until sleep finishes, delaying shutdown by five seconds.
+    sleep "$POLL" &
+    nap_pid=$!
+    wait "$nap_pid" 2>/dev/null
+    nap_pid=""
+  done
+
+  rm -f "$PID_FILE" "$END_FILE"
+
+  if lid_closed && ((suspend_at_end)); then
+    notify "Timer finished. Suspending."
+    sleep 1
+    systemctl suspend
+  else
+    hyprctl dispatch dpms on >/dev/null 2>&1
+    notify "Timer finished. Normal lid behavior has been restored."
+  fi
+}
+
+start() {
+  local secs=$1 end watch_args
+
+  stop # restart cleanly if already active
+
+  end=$(($(date +%s) + secs))
+  echo "$end" >"$END_FILE"
+
+  watch_args=(--watch)
+  ((suspend_at_end)) || watch_args+=(--no-suspend)
+
+  setsid systemd-inhibit \
+    --what=handle-lid-switch \
+    --who="nightmode" \
+    --why="Media playback with the lid closed" \
+    --mode=block \
+    -- "$(realpath "$0")" "${watch_args[@]}" >/dev/null 2>&1 &
+  disown
+
+  # Wait for the loop to publish its PID so `status` and the widget see the
+  # correct state as soon as this command returns.
+  for _ in {1..40}; do
+    running_pid >/dev/null && break
+    sleep 0.05
+  done
+
+  printf 'Keep Awake active for %s: you can close the lid and audio will continue.\n' \
+    "$(human_left "$secs")"
+  notify "Active for $(human_left "$secs"). You can close the lid."
+}
+
+turn_off() {
+  if running_pid >/dev/null; then
+    stop
+    hyprctl dispatch dpms on >/dev/null 2>&1
+    notify "Turned off. Closing the lid will suspend the machine."
+    echo "Keep Awake turned off"
+  else
+    echo "Keep Awake is already off"
+  fi
+}
+
+extend() {
+  local delta=${1:-} sign=1 secs end left
+
+  [[ $delta == -* ]] && sign=-1
+  delta=${delta#[-+]}
+
+  if ! secs=$(parse_duration "$delta"); then
+    echo "invalid duration: ${1:-}  (examples: +30m, -15m, 1h)" >&2
+    return 1
+  fi
+
+  if ! running_pid >/dev/null; then
+    ((sign > 0)) || { echo "Keep Awake is off"; return 1; }
+    start "$secs"
+    return 0
+  fi
+
+  end=$(read_end) || end=$(date +%s)
+  end=$((end + sign * secs))
+  left=$((end - $(date +%s)))
+
+  if ((left <= 0)); then
+    turn_off
+    return 0
+  fi
+
+  echo "$end" >"$END_FILE"
+  printf '%s remaining\n' "$(human_left "$left")"
+  notify "$(human_left "$left") remaining."
+}
+
+# --no-suspend can appear anywhere on the command line.
+suspend_at_end=1
+args=()
+for arg in "$@"; do
+  case $arg in
+    --no-suspend) suspend_at_end=0 ;;
+    *) args+=("$arg") ;;
+  esac
+done
+set -- ${args[@]+"${args[@]}"}
+
+if [[ ${1:-} == "-h" || ${1:-} == "--help" ]]; then
+  sed -n '2,22p' "$0" | sed 's/^# \?//'
+  exit 0
+fi
+
+ensure_state_dir
+
+case "${1:-}" in
+  --watch)
+    watch_loop "$suspend_at_end"
+    exit 0
+    ;;
+  off | stop)
+    turn_off
+    exit $?
+    ;;
+  toggle)
+    if running_pid >/dev/null; then
+      turn_off
+      exit 0
+    fi
+    shift
+    set -- "${1:-2h}"
+    ;;
+  extend)
+    extend "${2:-}"
+    exit $?
+    ;;
+  status)
+    status
+    exit $?
+    ;;
+  state)
+    state
+    exit 0
+    ;;
+esac
+
+if ! secs=$(parse_duration "${1:-2h}"); then
+  echo "invalid duration: $1  (examples: 90, 45m, 2h, 1h30)" >&2
+  exit 1
+fi
+((secs > 0)) || { echo "duration must be greater than zero" >&2; exit 1; }
+
+start "$secs"
